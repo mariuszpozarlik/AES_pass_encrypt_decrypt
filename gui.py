@@ -36,6 +36,12 @@ class EncryptorApp:
         self.decrypt_button = tk.Button(master, text="Decrypt", command=self.decrypt)
         self.decrypt_button.pack(pady=5)
 
+        self.file_encrypt_button = tk.Button(master, text="Encrypt File", command=self.encrypt_file)
+        self.file_encrypt_button.pack(pady=5)
+
+        self.file_decrypt_button = tk.Button(master, text="Decrypt File", command=self.decrypt_file)
+        self.file_decrypt_button.pack(pady=5)
+
         # Output
         self.output_label = tk.Label(master, text="Output:")
         self.output_label.pack()
@@ -47,7 +53,7 @@ class EncryptorApp:
             algorithm=hashes.SHA256(),
             length=length,
             salt=salt,
-            iterations=500_000,
+            iterations=200_000,
             backend=default_backend()
         )
         return kdf.derive(password)
@@ -59,7 +65,6 @@ class EncryptorApp:
         if password != confirm_password:
             messagebox.showerror("Error", "Passwords do not match")
             return
-
         if len(password) < 16:
             messagebox.showerror("Error", "Password must be at least 16 bytes (characters) long")
             return
@@ -102,6 +107,55 @@ class EncryptorApp:
         except Exception as e:
             messagebox.showerror("Error", f"Decryption failed: {str(e)}")
 
+    def encrypt_file(self):
+        filepath = filedialog.askopenfilename(title="Select file to encrypt")
+        if not filepath:
+            return
+        password = self.password_entry.get().encode()
+        if len(password) < 16:
+            messagebox.showerror("Error", "Password must be at least 16 characters")
+            return
+        with open(filepath, "rb") as f:
+            data = f.read()
+        salt = os.urandom(16)
+        nonce = os.urandom(12)
+        key = self.derive_key(password, salt)
+        aesgcm = AESGCM(key)
+        encrypted = aesgcm.encrypt(nonce, data, None)
+        out_data = salt + nonce + encrypted
+        outpath = filedialog.asksaveasfilename(defaultextension=".enc", title="Save encrypted file as")
+        if not outpath:
+            return
+        with open(outpath, "wb") as f:
+            f.write(out_data)
+        messagebox.showinfo("Success", f"Encrypted file saved to {outpath}")
+
+    def decrypt_file(self):
+        filepath = filedialog.askopenfilename(title="Select encrypted file")
+        if not filepath:
+            return
+        password = self.password_entry.get().encode()
+        if len(password) < 16:
+            messagebox.showerror("Error", "Password must be at least 16 characters")
+            return
+        with open(filepath, "rb") as f:
+            raw = f.read()
+        if len(raw) < 28:
+            messagebox.showerror("Error", "Encrypted file is too short or invalid")
+            return
+        salt, nonce, ciphertext = raw[:16], raw[16:28], raw[28:]
+        key = self.derive_key(password, salt)
+        aesgcm = AESGCM(key)
+        try:
+            decrypted = aesgcm.decrypt(nonce, ciphertext, None)
+            outpath = filedialog.asksaveasfilename(title="Save decrypted file as")
+            if not outpath:
+                return
+            with open(outpath, "wb") as f:
+                f.write(decrypted)
+            messagebox.showinfo("Success", f"Decrypted file saved to {outpath}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Decryption failed: {str(e)}")
 
 if __name__ == "__main__":
     root = tk.Tk()
